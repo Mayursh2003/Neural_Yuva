@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 
 from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
@@ -10,6 +10,9 @@ from persona import generate_reply
 from extraction import extract_intelligence
 from callback import send_final_callback
 from llm_advisor import llm_classify
+from typing import Optional, List, Union, Dict, Any
+import uuid
+
 
 app = FastAPI()
 
@@ -29,10 +32,11 @@ class Message(BaseModel):
 
 
 class RequestBody(BaseModel):
-    sessionId: str
-    message: Union[str, Message]
-    conversationHistory: List[Message] = Field(default_factory=list)
-    metadata: Optional[Metadata] = None
+    sessionId: Optional[str] = None
+    message: Optional[Union[str, Dict[str, Any], Message]] = None
+    conversationHistory: Optional[List[Message]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
 
 
 # ---------- HEALTH ----------
@@ -50,17 +54,33 @@ def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # ✅ normalize message safely (NO validators, NO crashes)
-    if isinstance(body.message, str):
-        body.message = Message(
-            sender="scammer",
-            text=body.message
-        )
-
-    session = get_session(body.sessionId)
+    # ---- Session ID handling (GUVI tester safe) ----
+    session_id = body.sessionId or f"auto-{uuid.uuid4().hex[:12]}"
+    session = get_session(session_id)
     session["messageCount"] += 1
 
-    text = body.message.text.lower()
+    # ---- Message normalization (VERY IMPORTANT) ----
+    if body.message is None:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    if isinstance(body.message, str):
+        message = Message(sender="scammer", text=body.message)
+
+    elif isinstance(body.message, dict):
+        message = Message(
+            sender=body.message.get("sender", "scammer"),
+            text=body.message.get("text", ""),
+            timestamp=body.message.get("timestamp")
+        )
+
+    elif isinstance(body.message, Message):
+        message = body.message
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid message format")
+
+    text = message.text.lower()
+
 
     # 1️⃣ Scam detection (rule-based)
     scam_detected, scam_type = detect_scam(text, session)
