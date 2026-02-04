@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+
+from fastapi import FastAPI, Header, HTTPException, Request
+from typing import Optional
 
 from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
@@ -14,77 +14,69 @@ from llm_advisor import llm_classify
 app = FastAPI()
 
 
-# --------- MODELS (MATCH GUVI EXACTLY) ---------
-
-class Message(BaseModel):
-    sender: str
-    text: str
-    timestamp: int  # epoch ms (IMPORTANT)
-
-
-class Metadata(BaseModel):
-    channel: Optional[str] = None
-    language: Optional[str] = None
-    locale: Optional[str] = None
-
-
-class RequestBody(BaseModel):
-    sessionId: str
-    message: Message
-    conversationHistory: List[Message]
-    metadata: Optional[Metadata] = None
-
-
-# --------- HEALTH CHECK ---------
-
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
 
 
-# --------- MAIN ENDPOINT ---------
-
 @app.post("/honeypot/message")
-def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
+async def honeypot(request: Request, x_api_key: Optional[str] = Header(None)):
 
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    session = get_session(body.sessionId)
+    # ---- RAW BODY (NO PYDANTIC) ----
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    session_id = body.get("sessionId", "unknown-session")
+
+    raw_message = body.get("message", "")
+    conversation = body.get("conversationHistory", [])
+
+    # ---- NORMALIZE MESSAGE ----
+    if isinstance(raw_message, dict):
+        text = str(raw_message.get("text", ""))
+    elif isinstance(raw_message, str):
+        text = raw_message
+    else:
+        text = ""
+
+    text = text.strip()
+
+    # ---- SESSION ----
+    session = get_session(session_id)
     session["messageCount"] += 1
 
-    text = body.message.text.lower()
-
-    # 1. Scam detection
+    # ---- SCAM DETECTION ----
     scam_detected, scam_type = detect_scam(text, session)
     if scam_detected:
         session["scamDetected"] = True
         session["scamType"] = scam_type
 
-    # 2. Optional LLM assist (only mid-confidence)
+    # ---- OPTIONAL LLM ASSIST ----
     if session["scamType"] in [None, "GENERIC_SCAM"] and 0.3 <= session["scamConfidence"] <= 0.6:
         llm_result = llm_classify(text)
         if llm_result:
             session["scamType"] = llm_result.get("scam_archetype")
             session["agentIntent"] = llm_result.get("suggested_intent")
 
-    # 3. Intent fallback
     if not session.get("agentIntent"):
         session["agentIntent"] = choose_agent_intent(session)
 
-    # 4. Tone & emotion
+    # ---- TONE & EMOTION ----
     session["scammerTone"] = detect_tone(text)
     update_emotion(session, text)
 
-    # 5. Intelligence extraction
+    # ---- INTELLIGENCE EXTRACTION ----
     extract_intelligence(session, text)
 
-    # 6. Completion + callback
+    # ---- FINAL CALLBACK ----
     if (
-        session["scamConfidence"] >= 0.9 and (
-            session["extractedIntelligence"]["upiIds"] or
-            session["extractedIntelligence"]["phishingLinks"]
-        )
+        session["scamConfidence"] >= 0.9 and
+        (session["extractedIntelligence"]["upiIds"] or session["extractedIntelligence"]["phishingLinks"])
     ):
         if not session.get("conversationComplete"):
             session["conversationComplete"] = True
@@ -94,7 +86,7 @@ def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
     else:
         reply = generate_reply(session)
 
-    update_session(body.sessionId, session)
+    update_session(session_id, session)
 
     return {
         "status": "success",
