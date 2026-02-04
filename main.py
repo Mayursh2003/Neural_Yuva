@@ -26,6 +26,9 @@ class RequestBody(BaseModel):
     message: Message
     conversationHistory: Optional[List[Message]] = []
 
+@app.get("/healthz")
+def health():
+    return {"status": "ok"}
 
 @app.post("/honeypot/message")
 def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
