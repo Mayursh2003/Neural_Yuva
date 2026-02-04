@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 from state import get_session, update_session, choose_agent_intent
@@ -10,6 +10,7 @@ from persona import generate_reply
 from extraction import extract_intelligence
 from callback import send_final_callback
 from llm_advisor import llm_classify
+
 
 # 🔴 THIS MUST COME BEFORE @app.post
 app = FastAPI()
@@ -24,7 +25,13 @@ class Message(BaseModel):
 class RequestBody(BaseModel):
     sessionId: str
     message: Message
-    conversationHistory: Optional[List[Message]] = []
+    conversationHistory: List[Message] = Field(default_factory=list)
+
+    if isinstance(body.message, str):
+        body.message = Message(
+            sender="scammer",
+            text=body.message
+        )
 
 @app.get("/healthz")
 def health():
@@ -74,7 +81,7 @@ def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
     # 5. Intent selection (only if not set)
     if not session.get("agentIntent"):
         session["agentIntent"] = choose_agent_intent(session)
-    # 🔒 Refund-scam steering: once UPI is mentioned, stay on destination
+    #  Refund-scam steering: once UPI is mentioned, stay on destination
     lower = text.lower()
     if (
     session.get("scamType") == "REFUND_SCAM"
