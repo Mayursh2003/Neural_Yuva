@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
@@ -10,6 +10,8 @@ from persona import generate_reply
 from extraction import extract_intelligence
 from callback import send_final_callback
 from llm_advisor import llm_classify
+
+
 
 
 # 🔴 THIS MUST COME BEFORE @app.post
