@@ -1,6 +1,8 @@
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from typing import Optional
+import json
+import logging
 
 from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
@@ -11,7 +13,17 @@ from extraction import extract_intelligence
 from callback import send_final_callback
 from llm_advisor import llm_classify
 
+
 app = FastAPI()
+
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+logger = logging.getLogger("guvi-debug")
 
 
 @app.get("/healthz")
@@ -25,18 +37,26 @@ async def honeypot(request: Request, x_api_key: Optional[str] = Header(None)):
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # ---- RAW BODY (NO PYDANTIC) ----
+    # ---- RAW REQUEST LOGGING ----
     try:
-        body = await request.json()
-    except Exception:
+        raw_body = await request.body()
+        raw_text = raw_body.decode("utf-8", errors="ignore")
+        body = json.loads(raw_text) if raw_text else {}
+    except Exception as e:
+        logger.error(f"Failed to parse JSON body: {e}")
         body = {}
+        raw_text = ""
 
+    logger.info("===== GUVI REQUEST RECEIVED =====")
+    logger.info(f"Headers: {dict(request.headers)}")
+    logger.info(f"Raw body: {raw_text}")
+    logger.info("=================================")
+
+    # ---- NORMALIZATION ----
     session_id = body.get("sessionId", "unknown-session")
-
     raw_message = body.get("message", "")
     conversation = body.get("conversationHistory", [])
 
-    # ---- NORMALIZE MESSAGE ----
     if isinstance(raw_message, dict):
         text = str(raw_message.get("text", ""))
     elif isinstance(raw_message, str):
@@ -82,7 +102,7 @@ async def honeypot(request: Request, x_api_key: Optional[str] = Header(None)):
             session["conversationComplete"] = True
             send_final_callback(session)
 
-        reply = "thoda samajh nahi aa raha… thoda time do"
+        reply = "thoda samajh nahi aa raha… thoda ruk jao"
     else:
         reply = generate_reply(session)
 
