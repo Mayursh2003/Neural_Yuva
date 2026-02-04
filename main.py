@@ -27,20 +27,28 @@ class RequestBody(BaseModel):
     message: Message
     conversationHistory: List[Message] = Field(default_factory=list)
 
-    if isinstance(body.message, str):
-        body.message = Message(
-            sender="scammer",
-            text=body.message
-        )
 
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
 
 @app.post("/honeypot/message")
-def honeypot(body: RequestBody, x_api_key: Optional[str] = Header(None)):
+def honeypot(
+    body: RequestBody,
+    x_api_key: Optional[str] = Header(None, alias="x-api-key")
+):
+
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    if isinstance(body.message, str):
+        body.message = Message(
+        sender="scammer",
+        text=body.message
+    )
+
+     
+
 
     session = get_session(body.sessionId)
     session["messageCount"] += 1
