@@ -19,13 +19,24 @@ app = FastAPI()
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: Optional[str] = None
+    timestamp: Optional[int] = None  # epoch ms
 
+class Metadata(BaseModel):
+    channel: Optional[str] = None
+    language: Optional[str] = None
+    locale: Optional[str] = None
 
 class RequestBody(BaseModel):
     sessionId: str
-    message: Message
+    message: Union[str, Message]
     conversationHistory: List[Message] = Field(default_factory=list)
+    metadata: Optional[Metadata] = None
+
+    @model_validator(mode="after")
+    def normalize_message(self):
+        if isinstance(self.message, str):
+            self.message = Message(sender="scammer", text=self.message)
+        return self
 
 
 @app.get("/healthz")
