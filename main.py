@@ -2,21 +2,22 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
-from requests import session
+from state import (
+    get_session,
+    update_session,
+    update_engagement_phase,
+)
 
-from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
 from tone import detect_tone
-from emotion import update_emotion
 from persona import generate_reply
 from extraction import extract_intelligence
 from callback import send_final_callback
-from llm_advisor import llm_classify
 
 app = FastAPI()
 
 
-# ---------- MODELS (GUVI-COMPATIBLE) ----------
+# ---------- MODELS (GUVI COMPATIBLE) ----------
 
 class Metadata(BaseModel):
     channel: Optional[str] = None
@@ -50,49 +51,41 @@ async def honeypot(
     session = get_session(body.sessionId)
     session["messageCount"] += 1
 
-    # ---- normalize incoming message ----
+    # 🔥 engagement phase update
+    update_engagement_phase(session)
+
+    # normalize message
     msg = body.message or {}
     text = msg.get("text", "")
-    sender = msg.get("sender", "scammer")
-
     if not isinstance(text, str):
         text = str(text)
 
-    # ---- scam detection ----
+    # scam detection
     scam_detected, scam_type = detect_scam(text, session)
     if scam_detected:
         session["scamDetected"] = True
         session["scamType"] = scam_type
+        session["scamConfidence"] = min(1.0, session["scamConfidence"] + 0.15)
 
-    # ---- tone + emotion ----
+    # tone
     session["scammerTone"] = detect_tone(text)
-    update_emotion(session, text)
 
-    # ---- intelligence extraction ----
+    # intelligence extraction (NOW WORKS)
     extract_intelligence(session, text)
 
-    # ---- LLM assist (only mid-confidence) ----
-    if (
-        session["scamType"] in [None, "GENERIC_SCAM"]
-        and 0.3 <= session["scamConfidence"] <= 0.6
-    ):
-        llm = llm_classify(text)
-        if llm:
-            session["scamType"] = llm.get("scam_archetype", session["scamType"])
-            session["agentIntent"] = llm.get("suggested_intent")
+    # 🎯 intent logic STRICTLY by phase
+    phase = session["engagementPhase"]
 
-    # ---- choose intent ----
-    session["agentIntent"] = choose_agent_intent(session)
+    if phase in ["HOOK", "MILK"]:
+        session["agentIntent"] = "VERIFY_PROCESS"
 
-    # --- intent escalation if scammer repeats same demand ---
-    if session["messageCount"] >= 3:
-        if session["agentIntent"] == "VERIFY_PROCESS":
-            session["agentIntent"] = "VERIFY_IDENTITY"
-        elif session["agentIntent"] == "VERIFY_IDENTITY":
+    elif phase == "VERIFY":
+        if session.get("scamType") == "REFUND_SCAM":
             session["agentIntent"] = "VERIFY_DESTINATION"
+        else:
+            session["agentIntent"] = "VERIFY_IDENTITY"
 
-
-    # ---- completion + callback ----
+    # completion + callback
     if (
         session["scamDetected"]
         and session["scamConfidence"] >= 0.85
@@ -101,12 +94,11 @@ async def honeypot(
             or session["extractedIntelligence"]["phoneNumbers"]
             or session["extractedIntelligence"]["bankAccounts"]
         )
+        and not session["conversationComplete"]
     ):
-        if not session.get("conversationComplete"):
-            session["conversationComplete"] = True
-            send_final_callback(session)
+        session["conversationComplete"] = True
+        send_final_callback(session)
 
-    # ---- agent reply ----
     reply = generate_reply(session)
 
     update_session(body.sessionId, session)

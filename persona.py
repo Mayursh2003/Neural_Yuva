@@ -1,66 +1,42 @@
 # persona.py
 import random
 
-USED_REPLIES = set()
-
-INTENT_TEMPLATES = {
-    "VERIFY_PROCESS": [
-        "bank ka process usually SMS ya call se aata hai na?",
-        "agar account issue hai toh official message aana chahiye",
-        "main galti nahi karna chahta, process thoda odd lag raha hai"
-    ],
-
-    "VERIFY_IDENTITY": [
-        "aap kaunse branch se bol rahe ho?",
-        "aapka employee ID ya extension number kya hai?",
-        "main bank ke number par callback kar sakta hoon?"
-    ],
-
-    "VERIFY_DESTINATION": [
-        "jo UPI aap bol rahe ho uska naam kya show hota hai?",
-        "receive aur pay mein difference hota hai na?",
-        "main pehle check kar leta hoon, accept baad mein karunga"
-    ],
-
-    "VERIFY_PAYMENT_MODE": [
-        "lottery ka paisa direct UPI se aata hai kya?",
-        "koi official mail ya letter hota hoga na?",
-        "main pehle confirm karna chahta hoon"
-    ]
-}
-
-EMOTION_MODIFIERS = {
-    "confused": [
-        "mujhe thoda doubt ho raha hai",
-        "clear nahi lag raha honestly"
-    ],
-    "anxious": [
-        "kahin paisa na phas jaye",
-        "pehle bhi fraud hua hai mere saath"
-    ],
-    "fearful": [
-        "account block ho gaya toh badi problem ho jayegi",
-        "ghar wale mana kar rahe hain"
-    ]
-}
-
 
 def generate_reply(session: dict):
-    intent = session.get("agentIntent", "VERIFY_PROCESS")
-    emotion = session.get("emotion", "confused")
+    phase = session.get("engagementPhase", "HOOK")
+    emotion = session.get("emotion", "anxious")
 
-    templates = INTENT_TEMPLATES.get(intent, ["thoda ruk jao"])
-    modifiers = EMOTION_MODIFIERS.get(emotion, [""])
+    # ---------- PHASE 1: HOOK ----------
+    if phase == "HOOK":
+        replies = [
+            "arey yeh kya ho gaya 😰 main bahut dar gaya hoon",
+            "haan haan batao kya karna hai, bas account safe rehna chahiye",
+            "mujhe zyada samajh nahi aata, aap hi guide karo",
+        ]
+        return random.choice(replies)
 
-    # prevent repetition
-    for _ in range(5):
-        base = random.choice(templates)
-        modifier = random.choice(modifiers)
-        reply = base
-        if modifier:
-            reply = reply + ", " + modifier
-        if reply not in USED_REPLIES:
-            USED_REPLIES.add(reply)
-            return reply
+    # ---------- PHASE 2: MILK ----------
+    if phase == "MILK":
+        replies = [
+            "step thoda detail mein batao, mujhe process samajhna hai",
+            "pehle kya hota hai phir kya hota hai?",
+            "main galat na kar doon isliye pooch raha hoon",
+        ]
+        return random.choice(replies)
 
-    return "main thoda busy hoon, baad mein baat karte hain"
+    # ---------- PHASE 3: VERIFY ----------
+    if phase == "VERIFY":
+        replies = [
+            "aap jo bol rahe ho woh SMS mein bhi aata hai kya?",
+            "UPI request ka naam same hi dikhega na?",
+            "account number pura dena hota hai ya last digits?",
+        ]
+        return random.choice(replies)
+
+    # ---------- PHASE 4: EXIT ----------
+    replies = [
+        "thoda ruk jao, OTP aaya nahi hai",
+        "network issue aa raha hai",
+        "main thodi der mein karta hoon",
+    ]
+    return random.choice(replies)
