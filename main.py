@@ -6,7 +6,6 @@ from state import (
     get_session,
     update_session,
     update_engagement_phase,
-    choose_agent_intent
 )
 
 from detection import detect_scam
@@ -18,7 +17,7 @@ from callback import send_final_callback
 app = FastAPI()
 
 
-# ---------- MODELS ----------
+# ---------- MODELS (GUVI-COMPATIBLE) ----------
 
 class Metadata(BaseModel):
     channel: Optional[str] = None
@@ -46,22 +45,24 @@ async def honeypot(
     request: Request,
     x_api_key: Optional[str] = Header(None)
 ):
+    # --- auth ---
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # --- session ---
     session = get_session(body.sessionId)
     session["messageCount"] += 1
 
-    # Engagement phase
+    # 🔥 engagement phase update (CRITICAL)
     update_engagement_phase(session)
 
-    # Normalize text
+    # --- normalize incoming message ---
     msg = body.message or {}
     text = msg.get("text", "")
     if not isinstance(text, str):
         text = str(text)
 
-    # Scam detection
+    # --- scam detection ---
     scam_detected, scam_type = detect_scam(text, session)
     if scam_detected:
         session["scamDetected"] = True
@@ -70,31 +71,47 @@ async def honeypot(
             1.0, session.get("scamConfidence", 0.0) + 0.15
         )
 
-    # Tone
+    # --- tone detection (optional but useful) ---
     session["scammerTone"] = detect_tone(text)
 
-    # Intelligence extraction
+    # --- intelligence extraction (ACCUMULATIVE) ---
     extract_intelligence(session, text)
 
-    # Intent strictly by phase
-    session["agentIntent"] = choose_agent_intent(session)
+    # --- intent selection STRICTLY by engagement phase ---
+    phase = session.get("engagementPhase")
 
-    # Completion + callback
+    if phase in ["HOOK", "MILK"]:
+        # Early: obedient, no verification
+        session["agentIntent"] = "VERIFY_PROCESS"
+
+    elif phase == "VERIFY":
+        # Late: soft confirmation only
+        if session.get("scamType") == "REFUND_SCAM":
+            session["agentIntent"] = "VERIFY_DESTINATION"
+        else:
+            session["agentIntent"] = "VERIFY_IDENTITY"
+
+    else:
+        session["agentIntent"] = "EXIT"
+
+    # --- completion + mandatory callback ---
     if (
-        session["scamDetected"]
-        and session["scamConfidence"] >= 0.85
+        session.get("scamDetected")
+        and session.get("scamConfidence", 0) >= 0.85
         and (
             session["extractedIntelligence"]["upiIds"]
             or session["extractedIntelligence"]["phoneNumbers"]
             or session["extractedIntelligence"]["bankAccounts"]
         )
-        and not session["conversationComplete"]
+        and not session.get("conversationComplete")
     ):
         session["conversationComplete"] = True
         send_final_callback(session)
 
+    # --- agent reply ---
     reply = generate_reply(session)
 
+    # --- persist session ---
     update_session(body.sessionId, session)
 
     return {
