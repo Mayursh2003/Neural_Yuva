@@ -1,76 +1,66 @@
 # persona.py
 import random
 
+USED_REPLIES = set()
+
 INTENT_TEMPLATES = {
     "VERIFY_PROCESS": [
-        "achha, process kya hai",
-        "thoda detail mein batao",
-        "next step kya hoga"
-    ],
-
-    "VERIFY_DESTINATION": [
-        "kis account mein bhejna hai",
-        "kaun sa account hai jahan wapas bhejna hai",
-        "details bhejo, main check karta hoon"
-    ],
-
-    "VERIFY_PAYMENT_MODE": [
-        "upi se hoga ya bank transfer",
-        "link bhejni padegi kya",
-        "paytm ya gpay chalega"
+        "bank ka process usually SMS ya call se aata hai na?",
+        "agar account issue hai toh official message aana chahiye",
+        "main galti nahi karna chahta, process thoda odd lag raha hai"
     ],
 
     "VERIFY_IDENTITY": [
-        "aap kaun bol rahe ho exactly",
-        "bank kaunse branch se ho",
-        "koi ID ya reference hai"
+        "aap kaunse branch se bol rahe ho?",
+        "aapka employee ID ya extension number kya hai?",
+        "main bank ke number par callback kar sakta hoon?"
+    ],
+
+    "VERIFY_DESTINATION": [
+        "jo UPI aap bol rahe ho uska naam kya show hota hai?",
+        "receive aur pay mein difference hota hai na?",
+        "main pehle check kar leta hoon, accept baad mein karunga"
+    ],
+
+    "VERIFY_PAYMENT_MODE": [
+        "lottery ka paisa direct UPI se aata hai kya?",
+        "koi official mail ya letter hota hoga na?",
+        "main pehle confirm karna chahta hoon"
     ]
 }
 
 EMOTION_MODIFIERS = {
-    "neutral": [""],
     "confused": [
-        " mujhe thoda clear nahi hai",
-        " samajh nahi aa raha properly"
+        "mujhe thoda doubt ho raha hai",
+        "clear nahi lag raha honestly"
     ],
     "anxious": [
-        " thoda soch samajh ke karna padega",
-        " galti ho gayi toh dikkat ho jayegi"
+        "kahin paisa na phas jaye",
+        "pehle bhi fraud hua hai mere saath"
     ],
-    "distressed": [
-        " paisa zyada amount hai",
-        " ghar walon se poochna padega"
+    "fearful": [
+        "account block ho gaya toh badi problem ho jayegi",
+        "ghar wale mana kar rahe hain"
     ]
 }
 
 
 def generate_reply(session: dict):
-    intent = session.get("agentIntent") or "VERIFY_PROCESS"
-    emotion = session.get("emotion", "neutral")
+    intent = session.get("agentIntent", "VERIFY_PROCESS")
+    emotion = session.get("emotion", "confused")
 
-    templates = INTENT_TEMPLATES.get(intent)
-    if not templates:
-        templates = ["samajhne do, phir se batao"]
+    templates = INTENT_TEMPLATES.get(intent, ["thoda ruk jao"])
+    modifiers = EMOTION_MODIFIERS.get(emotion, [""])
 
-    base = random.choice(templates)
+    # prevent repetition
+    for _ in range(5):
+        base = random.choice(templates)
+        modifier = random.choice(modifiers)
+        reply = base
+        if modifier:
+            reply = reply + ", " + modifier
+        if reply not in USED_REPLIES:
+            USED_REPLIES.add(reply)
+            return reply
 
-    # hesitation without duplication
-    if random.random() < 0.3 and not base.startswith("achha"):
-        base = "achha… " + base
-
-    modifier = ""
-    if session.get("messageCount", 0) > 1:
-        modifier = random.choice(
-            EMOTION_MODIFIERS.get(emotion, [""])
-        )
-
-    reply = base
-    if modifier:
-        reply = reply + ", " + modifier.lstrip()
-
-
-    # absolute safety fallback
-    if not reply:
-        reply = "thoda ruk jao, main samajh raha hoon"
-
-    return reply
+    return "main thoda busy hoon, baad mein baat karte hain"

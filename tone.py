@@ -11,6 +11,15 @@ def detect_tone(text: str):
 
     if len(text.split()) <= 3:
         return "sloppy"
+    
+
+    if any(w in t for w in ["urgent", "immediately", "blocked", "last chance"]):
+        return "threatening"
+
+    if any(w in t for w in ["sir", "madam", "trust", "verify"]):
+        return "authoritative"
+
+    return "neutral"
 
     return "formal"
 

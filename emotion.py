@@ -1,14 +1,15 @@
 # emotion.py
 
 def update_emotion(session: dict, text: str):
-    confidence = session.get("scamConfidence", 0.0)
-    current = session["emotion"]
+    lower = text.lower()
 
-    if confidence >= 0.3 and current == "neutral":
+    if any(w in lower for w in ["urgent", "blocked", "immediately", "last chance"]):
+        session["pressureLevel"] += 1
+
+    if session["pressureLevel"] <= 1:
         session["emotion"] = "confused"
-
-    elif confidence >= 0.6 and current in ["neutral", "confused"]:
+    elif session["pressureLevel"] == 2:
         session["emotion"] = "anxious"
+    elif session["pressureLevel"] >= 3:
+        session["emotion"] = "fearful"
 
-    elif confidence >= 0.85:
-        session["emotion"] = "distressed"

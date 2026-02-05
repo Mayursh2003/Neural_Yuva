@@ -2,6 +2,8 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
+from requests import session
+
 from state import get_session, update_session, choose_agent_intent
 from detection import detect_scam
 from tone import detect_tone
@@ -81,6 +83,14 @@ async def honeypot(
 
     # ---- choose intent ----
     session["agentIntent"] = choose_agent_intent(session)
+
+    # --- intent escalation if scammer repeats same demand ---
+    if session["messageCount"] >= 3:
+        if session["agentIntent"] == "VERIFY_PROCESS":
+            session["agentIntent"] = "VERIFY_IDENTITY"
+        elif session["agentIntent"] == "VERIFY_IDENTITY":
+            session["agentIntent"] = "VERIFY_DESTINATION"
+
 
     # ---- completion + callback ----
     if (
