@@ -6,6 +6,7 @@ from state import (
     get_session,
     update_session,
     update_engagement_phase,
+    choose_agent_intent
 )
 
 from detection import detect_scam
@@ -17,7 +18,7 @@ from callback import send_final_callback
 app = FastAPI()
 
 
-# ---------- MODELS (GUVI COMPATIBLE) ----------
+# ---------- MODELS ----------
 
 class Metadata(BaseModel):
     channel: Optional[str] = None
@@ -51,41 +52,34 @@ async def honeypot(
     session = get_session(body.sessionId)
     session["messageCount"] += 1
 
-    # 🔥 engagement phase update
+    # Engagement phase
     update_engagement_phase(session)
 
-    # normalize message
+    # Normalize text
     msg = body.message or {}
     text = msg.get("text", "")
     if not isinstance(text, str):
         text = str(text)
 
-    # scam detection
+    # Scam detection
     scam_detected, scam_type = detect_scam(text, session)
     if scam_detected:
         session["scamDetected"] = True
         session["scamType"] = scam_type
-        session["scamConfidence"] = min(1.0, session["scamConfidence"] + 0.15)
+        session["scamConfidence"] = min(
+            1.0, session.get("scamConfidence", 0.0) + 0.15
+        )
 
-    # tone
+    # Tone
     session["scammerTone"] = detect_tone(text)
 
-    # intelligence extraction (NOW WORKS)
+    # Intelligence extraction
     extract_intelligence(session, text)
 
-    # 🎯 intent logic STRICTLY by phase
-    phase = session["engagementPhase"]
+    # Intent strictly by phase
+    session["agentIntent"] = choose_agent_intent(session)
 
-    if phase in ["HOOK", "MILK"]:
-        session["agentIntent"] = "VERIFY_PROCESS"
-
-    elif phase == "VERIFY":
-        if session.get("scamType") == "REFUND_SCAM":
-            session["agentIntent"] = "VERIFY_DESTINATION"
-        else:
-            session["agentIntent"] = "VERIFY_IDENTITY"
-
-    # completion + callback
+    # Completion + callback
     if (
         session["scamDetected"]
         and session["scamConfidence"] >= 0.85

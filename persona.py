@@ -1,42 +1,48 @@
 # persona.py
 import random
 
+USED_REPLIES = set()
+
 
 def generate_reply(session: dict):
     phase = session.get("engagementPhase", "HOOK")
-    emotion = session.get("emotion", "anxious")
 
-    # ---------- PHASE 1: HOOK ----------
+    # ---------- HOOK ----------
     if phase == "HOOK":
         replies = [
-            "arey yeh kya ho gaya 😰 main bahut dar gaya hoon",
-            "haan haan batao kya karna hai, bas account safe rehna chahiye",
-            "mujhe zyada samajh nahi aata, aap hi guide karo",
+            "arey yeh kya ho gaya maine to kuch kiya he nahi",
+            "ese kese",
+            "kese karna hai btao jaldi se",
         ]
-        return random.choice(replies)
 
-    # ---------- PHASE 2: MILK ----------
-    if phase == "MILK":
+    # ---------- MILK ----------
+    elif phase == "MILK":
         replies = [
-            "step thoda detail mein batao, mujhe process samajhna hai",
-            "pehle kya hota hai phir kya hota hai?",
+            "step thoda detail mein batao, pehle kya karna hai?",
             "main galat na kar doon isliye pooch raha hoon",
+            "aap jaise bol rahe ho waise hi karna hai na?"
         ]
-        return random.choice(replies)
 
-    # ---------- PHASE 3: VERIFY ----------
-    if phase == "VERIFY":
+    # ---------- VERIFY ----------
+    elif phase == "VERIFY":
         replies = [
-            "aap jo bol rahe ho woh SMS mein bhi aata hai kya?",
-            "UPI request ka naam same hi dikhega na?",
+            "UPI yhi h  kya?",
             "account number pura dena hota hai ya last digits?",
+            "OTP aane ke baad next kya hota hai?"
         ]
-        return random.choice(replies)
 
-    # ---------- PHASE 4: EXIT ----------
-    replies = [
-        "thoda ruk jao, OTP aaya nahi hai",
-        "network issue aa raha hai",
-        "main thodi der mein karta hoon",
-    ]
-    return random.choice(replies)
+    # ---------- EXIT ----------
+    else:
+        replies = [
+            "OTP aaya nahi hai, thoda ruk jao",
+            "network slow hai, 2 minute do",
+            "main thodi der mein karta hoon"
+        ]
+
+    for _ in range(5):
+        reply = random.choice(replies)
+        if reply not in USED_REPLIES:
+            USED_REPLIES.add(reply)
+            return reply
+
+    return "ruko main dekhta hoon"  # fallback reply
