@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+import time
 
 from state import (
     get_session,
     update_session,
     update_engagement_phase,
+    update_pressure,
+    update_emotion_from_pressure,
+    update_scam_confidence,
+    log_message
 )
 
 from detection import detect_scam
@@ -13,11 +18,12 @@ from tone import detect_tone
 from persona import generate_reply
 from extraction import extract_intelligence
 from callback import send_final_callback
+from llm_advisor import llm_classify
 
 app = FastAPI()
 
 
-# ---------- MODELS (GUVI-COMPATIBLE) ----------
+# ---------------- MODELS (GUVI SAFE) ----------------
 
 class Metadata(BaseModel):
     channel: Optional[str] = None
@@ -37,7 +43,7 @@ def health():
     return {"status": "ok"}
 
 
-# ---------- MAIN ENDPOINT ----------
+# ---------------- MAIN ENDPOINT ----------------
 
 @app.post("/honeypot/message")
 async def honeypot(
@@ -45,73 +51,76 @@ async def honeypot(
     request: Request,
     x_api_key: Optional[str] = Header(None)
 ):
-    # --- auth ---
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # --- session ---
     session = get_session(body.sessionId)
+
+    # ---- increment turn count ----
     session["messageCount"] += 1
 
-    # 🔥 engagement phase update (CRITICAL)
+    # ---- update conversation phase ----
     update_engagement_phase(session)
 
-    # --- normalize incoming message ---
+    # ---- normalize incoming message ----
     msg = body.message or {}
     text = msg.get("text", "")
+    sender = msg.get("sender", "scammer")
+
     if not isinstance(text, str):
         text = str(text)
 
-    # --- scam detection ---
+    # ---- internal logging (dataset safe) ----
+    log_message(session, text)
+
+    # ---- scam detection (cheap + deterministic first) ----
     scam_detected, scam_type = detect_scam(text, session)
     if scam_detected:
         session["scamDetected"] = True
         session["scamType"] = scam_type
-        session["scamConfidence"] = min(
-            1.0, session.get("scamConfidence", 0.0) + 0.15
-        )
 
-    # --- tone detection (optional but useful) ---
+    # ---- pressure + emotion ----
+    update_pressure(session, text)
+    update_emotion_from_pressure(session)
+    update_scam_confidence(session)
+
+    # ---- tone (informational only) ----
     session["scammerTone"] = detect_tone(text)
 
-    # --- intelligence extraction (ACCUMULATIVE) ---
+    # ---- intelligence extraction (always run) ----
     extract_intelligence(session, text)
 
-    # --- intent selection STRICTLY by engagement phase ---
-    phase = session.get("engagementPhase")
-
-    if phase in ["HOOK", "MILK"]:
-        # Early: obedient, no verification
-        session["agentIntent"] = "VERIFY_PROCESS"
-
-    elif phase == "VERIFY":
-        # Late: soft confirmation only
-        if session.get("scamType") == "REFUND_SCAM":
-            session["agentIntent"] = "VERIFY_DESTINATION"
-        else:
-            session["agentIntent"] = "VERIFY_IDENTITY"
-
-    else:
-        session["agentIntent"] = "EXIT"
-
-    # --- completion + mandatory callback ---
+    # ---- LLM assist (STRICTLY bounded) ----
+    # LLM is advisory only, never controls flow
     if (
-        session.get("scamDetected")
-        and session.get("scamConfidence", 0) >= 0.85
+        session["scamType"] in [None, "GENERIC_SCAM"]
+        and 0.35 <= session["scamConfidence"] <= 0.65
+        and session["engagementPhase"] in ["MILK", "VERIFY"]
+    ):
+        llm_result = llm_classify(text)
+        if llm_result:
+            session["scamType"] = llm_result.get(
+                "scam_archetype", session["scamType"]
+            )
+
+    # ---- completion logic (GUVI-safe) ----
+    if (
+        session["scamDetected"]
+        and session["scamConfidence"] >= 0.85
         and (
             session["extractedIntelligence"]["upiIds"]
             or session["extractedIntelligence"]["phoneNumbers"]
             or session["extractedIntelligence"]["bankAccounts"]
         )
-        and not session.get("conversationComplete")
+        and not session["conversationComplete"]
     ):
         session["conversationComplete"] = True
         send_final_callback(session)
 
-    # --- agent reply ---
+    # ---- generate reply (human pacing) ----
     reply = generate_reply(session)
 
-    # --- persist session ---
+    # ---- persist session ----
     update_session(body.sessionId, session)
 
     return {

@@ -3,37 +3,48 @@ import random
 
 
 def generate_reply(session: dict):
+    """
+    Human-style Indian victim persona.
+    No emojis.
+    No repetition.
+    Moves conversation forward gently.
+    """
+
     phase = session.get("engagementPhase", "HOOK")
 
-    # ---------- HOOK: fear + obedience ----------
+    # -------- HOOK: Fear + compliance --------
     if phase == "HOOK":
-        return random.choice([
-            "arey yeh kya ho gaya 😰 haan haan batao kya karna hai",
-            "please jaldi batao, account block ho gaya toh problem ho jayegi",
-            "mujhe zyada samajh nahi aata, aap jaise bolo waise karunga"
-        ])
+        replies = [
+            "achha, mujhe samajh nahi aa raha hai, aap batao kya karna hoga",
+            "theek hai, bas account safe rehna chahiye",
+            "main thoda ghabra gaya hoon, aap process bata do",
+        ]
+        return random.choice(replies)
 
-    # ---------- MILK: PARTIAL COMPLIANCE (CRITICAL) ----------
+    # -------- MILK: Make scammer explain --------
     if phase == "MILK":
-        session["softCompliance"] = min(3, session.get("softCompliance", 0) + 1)
+        replies = [
+            "aap ek baar poora process bata do, step by step",
+            "pehle kya karna hota hai, phir kya hota hai?",
+            "main galat na kar doon isliye pooch raha hoon",
+            "aap jaise bol rahe ho, waise hi follow karna hai na?",
+        ]
+        return random.choice(replies)
 
-        return random.choice([
-            "achha… account number ready kar raha hoon, pehle confirm kar loon",
-            "OTP aane hi wala hai, bas ek baar process samjha do",
-            "haan samajh aa raha hai, pehle kya dalna hota hai?"
-        ])
-
-    # ---------- VERIFY: SOFT confirmation, not challenge ----------
+    # -------- VERIFY: Soft clarification, not challenge --------
     if phase == "VERIFY":
-        return random.choice([
-            "UPI request aap bhejoge ya mujhe type karna hoga?",
-            "account number pura dalna hota hai ya last digits?",
-            "OTP ke baad koi aur step toh nahi hota na?"
-        ])
+        replies = [
+            "jo aap bol rahe ho, woh SMS mein bhi aata hai kya?",
+            "UPI request ka naam wahi dikhega jo aap bata rahe ho?",
+            "account number poora dena hota hai ya last digits?",
+            "OTP aane ke baad next step kya hota hai?",
+        ]
+        return random.choice(replies)
 
-    # ---------- EXIT ----------
-    return random.choice([
-        "OTP abhi nahi aaya, network issue hai",
-        "thoda time do, phone hang ho raha hai",
-        "main 2 minute mein karta hoon"
-    ])
+    # -------- EXIT: Delay without confrontation --------
+    replies = [
+        "OTP abhi aaya nahi hai, thoda wait karna padega",
+        "network thoda slow hai, ek minute do",
+        "main check karke batata hoon, thoda time lagega",
+    ]
+    return random.choice(replies)
